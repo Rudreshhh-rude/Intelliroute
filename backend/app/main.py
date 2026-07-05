@@ -778,33 +778,23 @@ async def get_dashboard_ui():
 <body>
 
     <header>
-        <h1><span>⚡</span> IntelliRoute Assistant Panel</h1>
-        <div style="display: flex; align-items: center; gap: 1rem;">
-            <div style="display: flex; align-items: center; gap: 0.5rem; background: rgba(30, 41, 59, 0.4); border: 1px solid var(--card-border); padding: 0.35rem 0.75rem; border-radius: 8px;">
-                <label for="apiKeyInput" style="font-size: 0.8rem; color: var(--text-muted); font-weight: 500;">API Key:</label>
-                <input type="password" id="apiKeyInput" value="{DEFAULT_API_KEY}" style="background: transparent; border: none; color: var(--text-main); font-size: 0.85rem; width: 220px; outline: none;" placeholder="Enter X-API-Key..." onchange="localStorage.setItem('x_api_key', this.value)">
-            </div>
-            <div class="status-badge">
-                <span class="status-dot"></span> Active Sandbox
-            </div>
-        </div>
+        <h1>IntelliRoute Assistant Panel</h1>
     </header>
 
     <main>
         <!-- Sidebar - Ingestion -->
         <section class="sidebar">
             <div>
-                <h2>📁 Manuals Ingestion</h2>
+                <h2>Manuals Ingestion</h2>
                 <div class="upload-card" onclick="document.getElementById('fileInput').click()">
                     <input type="file" id="fileInput" onchange="handleFileUpload(event)">
-                    <div style="font-size: 1.75rem;">📤</div>
                     <p style="font-weight: 500; color: #a5b4fc; margin-top: 0.25rem;">Drop manual file here</p>
                     <p>Supports .md or .pdf</p>
                 </div>
             </div>
 
             <div>
-                <h2>📄 Ingested Documents</h2>
+                <h2>Ingested Documents</h2>
                 <div class="file-list" id="fileList">
                     <p style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 1rem;">No manuals loaded yet.</p>
                 </div>
@@ -828,7 +818,7 @@ async def get_dashboard_ui():
         <!-- Sidebar - Observability Metrics -->
         <section class="metrics-sidebar">
             <div>
-                <h2>📊 Session Metrics</h2>
+                <h2>Session Metrics</h2>
                 <div class="kpi-grid">
                     <div class="kpi-card">
                         <span class="kpi-title">Total Cost</span>
@@ -850,7 +840,7 @@ async def get_dashboard_ui():
             </div>
 
             <div>
-                <h2>📜 Router Transaction Log</h2>
+                <h2>Router Transaction Log</h2>
                 <div class="transaction-list" id="transactionList">
                     <p style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 1rem;">No transactions logged.</p>
                 </div>
@@ -859,19 +849,13 @@ async def get_dashboard_ui():
     </main>
 
     <script>
+        const apiKey = "{DEFAULT_API_KEY}";
         function getApiKey() {
-            const inputVal = document.getElementById("apiKeyInput").value;
-            if (inputVal) return inputVal;
-            const saved = localStorage.getItem("x_api_key");
-            return saved || "";
+            return apiKey;
         }
 
         // Fetch current documents and metrics on load
         window.onload = () => {
-            const savedKey = localStorage.getItem("x_api_key");
-            if (savedKey) {
-                document.getElementById("apiKeyInput").value = savedKey;
-            }
             fetchDocuments();
             fetchMetrics();
         };
