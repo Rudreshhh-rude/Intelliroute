@@ -1,0 +1,122 @@
+{
+  "id": "root_integration_guide.md",
+  "title": "integration_guide.md",
+  "type": "document",
+  "summary": "Structured Markdown content from integration_guide.md.",
+  "content": null,
+  "metadata": {},
+  "children": [
+    {
+      "id": "sec_1",
+      "title": "IntelliRoute Enterprise Integration Guide",
+      "type": "section",
+      "summary": null,
+      "content": null,
+      "metadata": {
+        "source": "integration_guide.md",
+        "heading_level": 1
+      },
+      "children": [
+        {
+          "id": "sec_2",
+          "title": "Chapter 1: Introduction and System Overview",
+          "type": "section",
+          "summary": "This guide provides complete specifications for integrating the IntelliRoute Adaptive Knowledge Engine. IntelliRoute is designed for enterprise grade assistants that require high speed, low cost, and adaptive accuracy.",
+          "content": "This guide provides complete specifications for integrating the IntelliRoute Adaptive Knowledge Engine.\nIntelliRoute is designed for enterprise grade assistants that require high speed, low cost, and adaptive accuracy.",
+          "metadata": {
+            "source": "integration_guide.md",
+            "heading_level": 2
+          },
+          "children": [
+            {
+              "id": "sec_3",
+              "title": "1.1 Architecture Highlights",
+              "type": "section",
+              "summary": "- Multi-model routing: dynamically chooses model based on query difficulty. - Dual retrieval routing: switches between Vector DB search and PageIndex structural tree navigation. - Semantic cache: skips duplicate LLM calls to minimize latency and toke...",
+              "content": "- Multi-model routing: dynamically chooses model based on query difficulty.\n- Dual retrieval routing: switches between Vector DB search and PageIndex structural tree navigation.\n- Semantic cache: skips duplicate LLM calls to minimize latency and token billing.",
+              "metadata": {
+                "source": "integration_guide.md",
+                "heading_level": 3
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "sec_4",
+          "title": "Chapter 2: Security & Authentication Specification",
+          "type": "section",
+          "summary": "All connections to IntelliRoute APIs must be signed and authorized.",
+          "content": "All connections to IntelliRoute APIs must be signed and authorized.",
+          "metadata": {
+            "source": "integration_guide.md",
+            "heading_level": 2
+          },
+          "children": [
+            {
+              "id": "sec_5",
+              "title": "2.1 API Key Management",
+              "type": "section",
+              "summary": "Enterprise administrators can generate API keys from the admin dashboard. Keys must be passed in the `X-API-Key` HTTP request header. To revoke a key, update the key status to `revoked` in the DB or click the revoke button.",
+              "content": "Enterprise administrators can generate API keys from the admin dashboard. Keys must be passed in the `X-API-Key` HTTP request header.\nTo revoke a key, update the key status to `revoked` in the DB or click the revoke button.",
+              "metadata": {
+                "source": "integration_guide.md",
+                "heading_level": 3
+              },
+              "children": []
+            },
+            {
+              "id": "sec_6",
+              "title": "2.2 Role Based Access Control (RBAC)",
+              "type": "section",
+              "summary": "There are three standard roles supported: 1. `Reader`: Can query search indices and chat. 2. `Writer`: Can upload and parse manuals/documents. 3. `Admin`: Full permissions, including API key generation and system configuration edits.",
+              "content": "There are three standard roles supported:\n1. `Reader`: Can query search indices and chat.\n2. `Writer`: Can upload and parse manuals/documents.\n3. `Admin`: Full permissions, including API key generation and system configuration edits.",
+              "metadata": {
+                "source": "integration_guide.md",
+                "heading_level": 3
+              },
+              "children": []
+            }
+          ]
+        },
+        {
+          "id": "sec_7",
+          "title": "Chapter 3: Performance Tuning and Caching",
+          "type": "section",
+          "summary": "To maintain high responsiveness, caching must be properly configured.",
+          "content": "To maintain high responsiveness, caching must be properly configured.",
+          "metadata": {
+            "source": "integration_guide.md",
+            "heading_level": 2
+          },
+          "children": [
+            {
+              "id": "sec_8",
+              "title": "3.1 Semantic Caching",
+              "type": "section",
+              "summary": "The semantic cache uses a similarity threshold of 0.85 (cosine distance). If a query matches a cached question with similarity >= 0.85, the cached response is returned.",
+              "content": "The semantic cache uses a similarity threshold of 0.85 (cosine distance). If a query matches a cached question with similarity >= 0.85, the cached response is returned.",
+              "metadata": {
+                "source": "integration_guide.md",
+                "heading_level": 3
+              },
+              "children": []
+            },
+            {
+              "id": "sec_9",
+              "title": "3.2 Token Bucket Rate Limiter",
+              "type": "section",
+              "summary": "The rate limiter enforces limits per API key: - Burst limit: 60 tokens (requests) - Refill rate: 1 token per second",
+              "content": "The rate limiter enforces limits per API key:\n- Burst limit: 60 tokens (requests)\n- Refill rate: 1 token per second",
+              "metadata": {
+                "source": "integration_guide.md",
+                "heading_level": 3
+              },
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

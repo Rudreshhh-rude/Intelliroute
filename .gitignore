@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+ENV/
+env/
+
+# Environments
+.env
+
+# Databases and storage
+*.db
+*.sqlite3
+chromadb_store/
+backend/chromadb_store/
+database.db
+backend/database.db
+test_outputs/
+
+# IDE and system
+.idea/
+.vscode/
+.gemini/
+.agents/
+.DS_Store
