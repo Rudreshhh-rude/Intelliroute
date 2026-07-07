@@ -1024,8 +1024,8 @@ async def get_dashboard_ui():
                 // Add routing strategy details
                 if (result.metrics) {
                     const routingLabel = result.cache_hit 
-                        ? `⚡ Retrieved from Semantic Cache (${result.routing_reasoning})`
-                        : `⚙️ Routed via ${result.strategy} search to ${result.metrics.chosen_model.replace("gemini-", "").toUpperCase()} (${result.routing_reasoning})`;
+                        ? `Retrieved from Semantic Cache (${result.routing_reasoning})`
+                        : `Routed via ${result.strategy} search to ${result.metrics.chosen_model.replace("gemini-", "").toUpperCase()} (${result.routing_reasoning})`;
                         
                     answerHtml += `
                         <div class="message-reasoning">
