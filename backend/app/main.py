@@ -562,6 +562,8 @@ async def get_dashboard_ui():
             flex-direction: column;
             background: rgba(2, 6, 23, 0.5);
             position: relative;
+            height: 100%;
+            overflow: hidden;
         }
 
         .chat-messages {
