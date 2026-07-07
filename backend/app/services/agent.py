@@ -12,7 +12,7 @@ from backend.app.services import database
 
 logger = logging.getLogger("intelliroute.agent")
 
-# --- 1. Real Tool definitions ---
+# Tool definitions
 
 def create_support_ticket(title: str, description: str, priority: str = "medium") -> str:
     """Creates a customer support ticket in the helpdesk system.
@@ -80,7 +80,7 @@ TOOLS_MAP = {
     "export_summary_json": export_summary_json
 }
 
-# --- 2. Adaptive Prompt templates ---
+# Adaptive prompt templates
 
 ZERO_SHOT_SYSTEM = """You are a helpful, factual Enterprise Knowledge Assistant.
 Answer the user's query directly and concisely using the retrieved context.
@@ -110,7 +110,7 @@ Reasoning Process:
 Final Answer: The rate limiter blocks requests because the token bucket has been exhausted. It allows up to 60 burst requests and refills at 1 request per second.
 """
 
-# --- 3. Memory management ---
+# Memory management
 
 class MemoryMessage(BaseModel):
     role: str  # "user" or "model"

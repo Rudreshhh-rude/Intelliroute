@@ -83,7 +83,7 @@ def init_db(default_admin_key: str):
         
     conn.close()
 
-# --- API Key Management Helpers ---
+# API Key Management
 
 def get_api_key(key: str) -> Optional[Dict[str, Any]]:
     """Retrieves an API key configuration from database."""
@@ -121,7 +121,7 @@ def revoke_api_key(key: str) -> bool:
     conn.close()
     return updated
 
-# --- Metrics Logger Helpers ---
+# Metrics Logger
 
 def log_route_metrics(
     query: str,
@@ -204,7 +204,7 @@ def get_detailed_transactions(limit: int = 50) -> List[Dict[str, Any]]:
     conn.close()
     return [dict(row) for row in rows]
 
-# --- Memory Manager Helpers ---
+# Memory Manager
 
 def save_chat_message(session_id: str, role: str, content: str):
     """Saves a single conversation history message."""

@@ -71,7 +71,7 @@ rate_limiter = RateLimiter(capacity=60.0, refill_rate=1.0)
 ingested_files_registry: List[Dict[str, Any]] = []
 
 
-# --- API Models ---
+# API Request Models
 
 class ChatRequest(BaseModel):
     query: str
@@ -106,7 +106,7 @@ def verify_api_key(required_roles: List[str]):
     return dependency
 
 
-# --- Endpoint 1: Upload and Ingest Document ---
+# Document ingestion endpoint
 
 @app.post("/api/ingest")
 async def ingest_document(
@@ -188,7 +188,7 @@ async def ingest_document(
             os.remove(temp_path)
 
 
-# --- Endpoint 2: Unified Chat Endpoint ---
+# Unified chat endpoint
 
 @app.post("/api/chat")
 async def chat_endpoint(
@@ -342,7 +342,7 @@ async def chat_endpoint(
     }
 
 
-# --- Endpoint 3: Observability Dashboard Summary ---
+# Observability dashboard summary endpoint
 
 @app.get("/api/metrics")
 async def get_metrics_summary(
@@ -352,7 +352,7 @@ async def get_metrics_summary(
     return database.get_metrics_summary()
 
 
-# --- Endpoint 4: Detailed Transaction Log ---
+# Detailed transaction log endpoint
 
 @app.get("/api/metrics/transactions")
 async def get_detailed_transactions(
@@ -363,7 +363,7 @@ async def get_detailed_transactions(
     return database.get_detailed_transactions(limit=limit)
 
 
-# --- Endpoint 5: Ingested Documents List ---
+# Ingested documents list endpoint
 
 @app.get("/api/documents")
 async def get_ingested_documents(
@@ -373,7 +373,7 @@ async def get_ingested_documents(
     return ingested_files_registry
 
 
-# --- Endpoint 6: Embedded Front-end Single Page Application Dashboard ---
+# Embedded frontend dashboard endpoint
 
 @app.get("/", response_class=HTMLResponse)
 async def get_dashboard_ui():
