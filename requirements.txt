@@ -6,3 +6,5 @@ chromadb
 pypdf
 PyYAML
 requests
+python-multipart
+
