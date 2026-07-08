@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+pydantic
+google-genai
+chromadb
+pypdf
+PyYAML
+requests
