@@ -6,6 +6,12 @@ Unlike standard RAG apps that just query a vector database and pass the results 
 
 ---
 
+### 🔗 Quick Links
+*   **Live Web App**: [https://intelliroute-u38t.onrender.com](https://intelliroute-u38t.onrender.com)
+*   **Loom Demo Video**: [https://www.loom.com/share/d7fcf2c86cbd4af79ef0afbc1ad4298e](https://www.loom.com/share/d7fcf2c86cbd4af79ef0afbc1ad4298e)
+
+---
+
 ## 🏗️ Architecture & Core Modules
 
 Here is a breakdown of what I built under the hood and why:
