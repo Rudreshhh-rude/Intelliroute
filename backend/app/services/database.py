@@ -1,13 +1,7 @@
-import os
-import sqlite3
-import time
-import logging
-from typing import Dict, Any, List, Optional, Tuple
-from pydantic import BaseModel
+import os, sqlite3, time, logging
+from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger("intelliroute.database")
-
-# Resolve database file path relative to project backend directory
 DB_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../database.db"))
 
 def get_db_connection() -> sqlite3.Connection:

@@ -1,7 +1,4 @@
-import os
-import re
-import yaml
-import pypdf
+import os, re, yaml, pypdf
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 

@@ -1,25 +1,12 @@
-import os
-import json
-import shutil
-import tempfile
-import time
-import logging
+import os, time, shutil, tempfile, logging, json
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, UploadFile, File, Header, HTTPException, Query, Security, Depends
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
-
-# Import services
 from backend.app.core.config import settings
-from backend.app.services.ingestion import (
-    parse_markdown,
-    parse_pdf,
-    build_markdown_structural_tree,
-    RecursiveCharacterTextSplitter,
-    Document
-)
+from backend.app.services.ingestion import parse_markdown, parse_pdf, build_markdown_structural_tree, RecursiveCharacterTextSplitter, Document
 from backend.app.services.retrieval import VectorRetriever, PageIndexRetriever, RelevanceReranker, RetrievalRouter
 from backend.app.services.routing import ModelRouter, observability_registry, RouteMetrics
 from backend.app.services.agent import AgentEngine, ConversationMemory
@@ -36,8 +23,6 @@ app = FastAPI(
     description="Adaptive Enterprise Knowledge & Action Assistant",
     version="1.0.0"
 )
-
-# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -45,8 +30,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Initialize Database
 api_key = settings.gemini_api_key
 if not api_key:
     raise ValueError("GEMINI_API_KEY environment variable is missing!")
@@ -63,15 +46,10 @@ retrieval_router = RetrievalRouter(api_key=api_key)
 agent_engine = AgentEngine(api_key=api_key)
 guardrails = Guardrails(api_key=api_key)
 semantic_cache = SemanticCache(api_key=api_key, threshold=0.85)
-
-# Burst limit 60, refill rate 1 request/sec
 rate_limiter = RateLimiter(capacity=60.0, refill_rate=1.0)
 
-# List of currently ingested documents in memory for display
 ingested_files_registry: List[Dict[str, Any]] = []
 
-
-# API Request Models
 
 class ChatRequest(BaseModel):
     query: str
@@ -104,10 +82,6 @@ def verify_api_key(required_roles: List[str]):
             )
         return key_record
     return dependency
-
-
-# Document ingestion endpoint
-
 @app.post("/api/ingest")
 async def ingest_document(
     file: UploadFile = File(...),
@@ -117,8 +91,6 @@ async def ingest_document(
 
     filename = file.filename or "uploaded_file"
     ext = os.path.splitext(filename)[1].lower()
-    
-    # Save upload to a temp file
     with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as temp_file:
         shutil.copyfileobj(file.file, temp_file)
         temp_path = temp_file.name
@@ -128,41 +100,31 @@ async def ingest_document(
         chunks = []
         has_tree = False
         tree_path = None
-        
-        # 1. Parse and chunk based on extension
         if ext == ".md":
             text = ""
             with open(temp_path, "r", encoding="utf-8") as f:
                 text = f.read()
-            # Split using split_documents to preserve metadata
             splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
             doc = Document(text=text, metadata={"source": filename, "file_type": "md"})
             chunks = splitter.split_documents([doc])
-            
-            # Create structural tree outline
             tree = build_markdown_structural_tree(temp_path)
             tree_json_path = os.path.join(tempfile.gettempdir(), f"{filename}_tree.json")
             with open(tree_json_path, "w", encoding="utf-8") as f:
                 json.dump(tree.model_dump(), f, indent=2)
-            # Load page_retriever tree index
             page_retriever.load_tree_index(tree_json_path)
             has_tree = True
             tree_path = tree_json_path
             
         elif ext == ".pdf":
             chunks = parse_pdf(temp_path)
-            # For PDFs, tree outlines can be mapped linearly
             
         else:
             raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
-            
-        # 2. Add chunks to Vector DB
+ 
         if chunks:
             vector_retriever.add_documents(chunks)
             
         duration = time.time() - start_time
-        
-        # Add to global registry
         file_info = {
             "filename": filename,
             "file_type": ext[1:].upper(),
@@ -183,12 +145,8 @@ async def ingest_document(
         logger.error(f"Failed to ingest document: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        # Clean up temp file
         if os.path.exists(temp_path):
             os.remove(temp_path)
-
-
-# Unified chat endpoint
 
 @app.post("/api/chat")
 async def chat_endpoint(
@@ -199,7 +157,6 @@ async def chat_endpoint(
     session_id = request.session_id
     memory = ConversationMemory(session_id=session_id)
 
-    # 1. API Key & Rate Limiting Enforcement
     client_key = key_record["key"]
     is_allowed, remaining_tokens = rate_limiter.is_allowed(client_key)
     if not is_allowed:
@@ -211,10 +168,8 @@ async def chat_endpoint(
     query = request.query
     start_time = time.time()
 
-    # 2. Semantic Cache Check
     cached_response, similarity = semantic_cache.lookup(query)
     if cached_response:
-        # Construct metrics for cache hit transaction
         metrics = RouteMetrics(
             query=query,
             classified_complexity="simple",
@@ -235,10 +190,9 @@ async def chat_endpoint(
             "routing_reasoning": metrics.reasoning
         }
 
-    # 3. Guardrails Input Check
     is_unsafe, safety_reason = guardrails.check_input_injection(query)
     if is_unsafe:
-        # Log unsafe transaction
+ 
         metrics = RouteMetrics(
             query=query,
             classified_complexity="simple",
@@ -259,48 +213,38 @@ async def chat_endpoint(
             "routing_reasoning": safety_reason
         }
 
-    # 4. Retrieval Routing Strategy
     has_tree = page_retriever.tree is not None
     try:
         strategy, routing_reason = retrieval_router.route(query, has_tree=has_tree)
     except Exception:
         strategy, routing_reason = "vector", "Failed to run router. Falling back to vector search."
 
-    # 5. Dual Retrieval Retrieval & Relevance Reranking
-    retrieved_docs = []
-    
-    if strategy in ["vector", "both"]:
-        try:
-            vector_docs = vector_retriever.query(query, n_results=4)
-            retrieved_docs.extend(vector_docs)
-        except Exception as e:
-            logger.error(f"Vector retriever query failed: {e}")
-            
-    if strategy in ["page_index", "both"] and has_tree:
-        try:
-            # page_retriever.traverse returns tree nodes
-            traverse_res = page_retriever.traverse(page_retriever.tree, query, max_depth=4)
-            # Convert traversed node sections to document references
-            page_docs = page_retriever.get_sections_as_documents(traverse_res)
-            retrieved_docs.extend(page_docs)
-        except Exception as e:
-            logger.error(f"PageIndex retrieval failed: {e}")
-
-    # Reranking Retrieved Documents
-    if retrieved_docs:
-        try:
-            reranked_docs = reranker.rerank(query, retrieved_docs, top_n=3)
-        except Exception:
-            reranked_docs = retrieved_docs[:3]
-    else:
-        reranked_docs = []
-
-    # Format context text block
     context_block = ""
-    for idx, doc in enumerate(reranked_docs):
-        context_block += f"Reference [{idx+1}] (Source: {doc.metadata.get('source', 'unknown')}):\n{doc.text}\n\n"
+    if strategy != "none":
+        retrieved_docs = []
+        if strategy in ["vector", "both"]:
+            try:
+                vector_docs = vector_retriever.query(query, n_results=4)
+                retrieved_docs.extend(vector_docs)
+            except Exception as e:
+                logger.error(f"Vector retriever query failed: {e}")
+        if strategy in ["page_index", "both"] and has_tree:
+            try:
+                traverse_res = page_retriever.traverse(page_retriever.tree, query, max_depth=4)
+                page_docs = page_retriever.get_sections_as_documents(traverse_res)
+                retrieved_docs.extend(page_docs)
+            except Exception as e:
+                logger.error(f"PageIndex retrieval failed: {e}")
+        if retrieved_docs:
+            try:
+                reranked_docs = reranker.rerank(query, retrieved_docs, top_n=3)
+            except Exception:
+                reranked_docs = retrieved_docs[:3]
+        else:
+            reranked_docs = []
+        for idx, doc in enumerate(reranked_docs):
+            context_block += f"Reference [{idx+1}] (Source: {doc.metadata.get('source', 'unknown')}):\n{doc.text}\n\n"
 
-    # 6. Execute Agent Engine Inference Loop
     try:
         response_text, metrics, tool_calls = agent_engine.run_agent_loop(
             query=query,
@@ -308,7 +252,6 @@ async def chat_endpoint(
             memory=memory
         )
     except Exception as e:
-        # API Error recovery fallback
         response_text = f"An API inference error occurred: {e}."
         metrics = RouteMetrics(
             query=query,
@@ -323,13 +266,11 @@ async def chat_endpoint(
         )
         tool_calls = None
         observability_registry.log_transaction(metrics)
-
-    # 7. Update cache and memory
     if response_text and "inference error" not in response_text.lower():
         semantic_cache.update(query, response_text)
         memory.add_message("user", query)
         memory.add_message("model", response_text)
-        # Periodic memory trimming check
+
         memory.trim_and_summarize(api_key=api_key, max_messages=8)
 
     return {
@@ -341,18 +282,12 @@ async def chat_endpoint(
         "tool_calls": tool_calls
     }
 
-
-# Observability dashboard summary endpoint
-
 @app.get("/api/metrics")
 async def get_metrics_summary(
     key_record: dict = Depends(verify_api_key(["Admin"]))
 ):
     """Retrieves session observability overview statistics."""
     return database.get_metrics_summary()
-
-
-# Detailed transaction log endpoint
 
 @app.get("/api/metrics/transactions")
 async def get_detailed_transactions(
@@ -362,19 +297,12 @@ async def get_detailed_transactions(
     """Retrieves the list of detailed query transaction routing logs from SQLite."""
     return database.get_detailed_transactions(limit=limit)
 
-
-# Ingested documents list endpoint
-
 @app.get("/api/documents")
 async def get_ingested_documents(
     key_record: dict = Depends(verify_api_key(["Reader", "Writer", "Admin"]))
 ):
     """Returns the list of ingested manual files."""
     return ingested_files_registry
-
-
-# Embedded frontend dashboard endpoint
-
 @app.get("/", response_class=HTMLResponse)
 async def get_dashboard_ui():
     """Renders a stunning dark-mode glassmorphic observability and chat interface."""

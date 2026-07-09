@@ -1,7 +1,4 @@
-import re
-import json
-import os
-import time
+import os, json, time
 import chromadb
 from chromadb import EmbeddingFunction, Documents, Embeddings
 from google import genai
@@ -278,8 +275,6 @@ Return raw JSON only.
                 contents=prompt
             )
             scores_data = _parse_json_response(response.text)
-            
-            # Map scores back to docs
             scored_docs = []
             score_map = {item["index"]: item["score"] for item in scores_data if "index" in item and "score" in item}
             
@@ -301,10 +296,6 @@ class RetrievalRouter:
         self.model_name = model_name
 
     def route(self, query: str, has_tree: bool) -> Tuple[str, str]:
-        """Decides whether to route the query to 'vector', 'page_index', or 'both'.
-        
-        Logs the reasoning.
-        """
         if not has_tree:
             return "vector", "No structural tree index is available for PageIndex retrieval; falling back to vector search."
 
@@ -314,13 +305,14 @@ User Query: "{query}"
 
 Retrieval Strategies:
 1. "vector": Best for semantic, broad questions across multiple documents, or general factual retrieval.
-2. "page_index": Best for structural queries referencing specific pages, sections, outlines, tables of contents, or navigating a single large manual (e.g., "What is in Chapter 4?", "According to page 12...").
+2. "page_index": Best for structural queries referencing specific pages, sections, outlines, tables of contents, or navigating a single large manual.
 3. "both": Best for complex queries that require both a broad search and structural layout navigation.
+4. "none": Best for greetings, general conversation, chit-chat, or queries where no document lookup is needed.
 
 Instructions:
 Select the best retrieval strategy.
 Return a JSON object with two fields:
-- "strategy": One of ["vector", "page_index", "both"]
+- "strategy": One of ["vector", "page_index", "both", "none"]
 - "reasoning": A brief sentence explaining why this strategy was chosen.
 
 Format output as raw JSON only.
@@ -334,7 +326,7 @@ Format output as raw JSON only.
             data = _parse_json_response(response.text)
             strategy = data.get("strategy", "vector").lower()
             reasoning = data.get("reasoning", "Defaulting to vector search.")
-            if strategy not in ["vector", "page_index", "both"]:
+            if strategy not in ["vector", "page_index", "both", "none"]:
                 strategy = "vector"
             return strategy, reasoning
         except Exception as e:

@@ -1,9 +1,6 @@
-import time
-import json
-import logging
+import time, logging
 from typing import Dict, Any, List, Tuple, Optional
 from pydantic import BaseModel
-from google import genai
 from backend.app.core.config import settings
 from backend.app.services.retrieval import get_genai_client, _parse_json_response, _call_gemini_with_retry
 
@@ -38,7 +35,7 @@ DEFAULT_PRICING_PRO = {"input": 1.25 / 1_000_000, "output": 5.00 / 1_000_000}
 
 class RouteMetrics(BaseModel):
     query: str
-    classified_complexity: str  # "simple" or "complex"
+    classified_complexity: str 
     chosen_model: str
     reasoning: str
     prompt_tokens: int
@@ -72,8 +69,6 @@ class ObservabilityRegistry:
 
     def get_summary(self) -> Dict[str, Any]:
         return database.get_metrics_summary()
-
-# Global registry instance for application monitoring
 observability_registry = ObservabilityRegistry()
 
 
@@ -81,7 +76,6 @@ class ModelRouter:
     def __init__(self, api_key: str):
         self.client = get_genai_client(api_key)
         self.model_flash = settings.model_name_flash
-        # Fallback default pro model
         self.model_pro = settings.model_name_pro or "gemini-2.5-pro"
 
     def classify_query(self, query: str) -> Tuple[str, str]:
@@ -102,7 +96,6 @@ Format output as a raw JSON object with two fields:
 Format output as raw JSON only.
 """
         try:
-            # We use flash model to classify quickly
             response = _call_gemini_with_retry(
                 client=self.client,
                 model=self.model_flash,
@@ -152,19 +145,15 @@ Format output as raw JSON only.
             )
             latency_sec = time.time() - start_time
         except Exception as e:
-            # Re-raise to let caller handle, but log failed transaction with 0 tokens if needed
             logger.error(f"Execution failed on model {chosen_model}: {e}")
             raise e
 
         # 5. Extract token counts and calculate cost
-        # The new google-genai SDK has response.usage_metadata
         prompt_tokens = 0
         completion_tokens = 0
         if response.usage_metadata:
             prompt_tokens = response.usage_metadata.prompt_token_count or 0
             completion_tokens = response.usage_metadata.candidates_token_count or 0
-            
-        # Fallback token estimate if metadata is missing (approx 4 chars per token)
         if prompt_tokens == 0:
             prompt_tokens = len(str(inputs)) // 4
         if completion_tokens == 0:
@@ -172,12 +161,9 @@ Format output as raw JSON only.
             
         pricing = MODEL_PRICING.get(chosen_model)
         if not pricing:
-            # Determine based on model suffix
             pricing = DEFAULT_PRICING_PRO if "pro" in chosen_model else DEFAULT_PRICING_FLASH
             
         cost_usd = (prompt_tokens * pricing["input"]) + (completion_tokens * pricing["output"])
-        
-        # 6. Log metrics transaction
         metrics = RouteMetrics(
             query=query,
             classified_complexity=complexity,
