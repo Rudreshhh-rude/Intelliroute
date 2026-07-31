@@ -25,7 +25,7 @@ class Guardrails:
         self.client = get_genai_client(api_key)
         self.model_name = settings.model_name_flash
 
-    def check_input_injection(self, query: str) -> Tuple[bool, str]:
+    def check_input_injection(self, query: str, tracker: Any = None) -> Tuple[bool, str]:
         """Checks user input for prompt injection attempts.
         
         Returns (is_blocked, reasoning).
@@ -53,7 +53,8 @@ Format output as raw JSON only.
             response = _call_gemini_with_retry(
                 client=self.client,
                 model=self.model_name,
-                contents=prompt
+                contents=prompt,
+                tracker=tracker
             )
             text = response.text.strip()
             if text.startswith("```"):
@@ -77,7 +78,6 @@ Format output as raw JSON only.
             return False, ""
         except Exception as e:
             logger.error(f"Error checking input injection: {e}. Defaulting to safe.")
-            # Default to false (safe) to avoid blocking valid queries due to rate limits or timeouts
             return False, ""
 
     def validate_output_schema(self, content: str, schema: BaseModel) -> Tuple[bool, Optional[BaseModel], str]:

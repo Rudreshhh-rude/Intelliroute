@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from backend.app.core.config import settings
 from backend.app.services.ingestion import parse_markdown, parse_pdf, build_markdown_structural_tree, RecursiveCharacterTextSplitter, Document
 from backend.app.services.retrieval import VectorRetriever, PageIndexRetriever, RelevanceReranker, RetrievalRouter
-from backend.app.services.routing import ModelRouter, observability_registry, RouteMetrics
+from backend.app.services.routing import ModelRouter, observability_registry, RouteMetrics, TokenTracker
 from backend.app.services.agent import AgentEngine, ConversationMemory
 from backend.app.services.guardrails import Guardrails
 from backend.app.services.cache import SemanticCache
@@ -48,7 +48,7 @@ guardrails = Guardrails(api_key=api_key)
 semantic_cache = SemanticCache(api_key=api_key, threshold=0.85)
 rate_limiter = RateLimiter(capacity=60.0, refill_rate=1.0)
 
-ingested_files_registry: List[Dict[str, Any]] = []
+ingested_files_registry: Dict[str, List[Dict[str, Any]]] = {}
 
 
 class ChatRequest(BaseModel):
@@ -85,9 +85,15 @@ def verify_api_key(required_roles: List[str]):
 @app.post("/api/ingest")
 async def ingest_document(
     file: UploadFile = File(...),
+    session_id: str = "default",
     key_record: dict = Depends(verify_api_key(["Writer", "Admin"]))
 ):
     """Uploads and ingests a Markdown, PDF, or YAML document into Vector DB and PageIndex."""
+    
+    if not session_id or session_id == "default":
+        import hashlib
+        session_id = f"session_anon_{hashlib.md5(str(time.time()).encode()).hexdigest()[:8]}"
+        logger.warning(f"Ingest missing session_id. Generated anon session: {session_id}")
 
     filename = file.filename or "uploaded_file"
     ext = os.path.splitext(filename)[1].lower()
@@ -111,7 +117,7 @@ async def ingest_document(
             tree_json_path = os.path.join(tempfile.gettempdir(), f"{filename}_tree.json")
             with open(tree_json_path, "w", encoding="utf-8") as f:
                 json.dump(tree.model_dump(), f, indent=2)
-            page_retriever.load_tree_index(tree_json_path)
+            page_retriever.load_tree_index(tree_json_path, session_id)
             has_tree = True
             tree_path = tree_json_path
             
@@ -122,6 +128,8 @@ async def ingest_document(
             raise HTTPException(status_code=400, detail=f"Unsupported file type: {ext}")
  
         if chunks:
+            for c in chunks:
+                c.metadata["session_id"] = session_id
             vector_retriever.add_documents(chunks)
             
         duration = time.time() - start_time
@@ -133,7 +141,9 @@ async def ingest_document(
             "duration_sec": round(duration, 2),
             "timestamp": time.time()
         }
-        ingested_files_registry.append(file_info)
+        if session_id not in ingested_files_registry:
+            ingested_files_registry[session_id] = []
+        ingested_files_registry[session_id].append(file_info)
         
         return {
             "status": "success",
@@ -155,7 +165,13 @@ async def chat_endpoint(
 ):
     """Processes queries using rate-limiting, semantic cache, guardrails, dual-retrieval routing, and agent loops."""
     session_id = request.session_id
+    if not session_id or session_id == "default":
+        import hashlib
+        session_id = f"session_anon_{hashlib.md5(str(time.time()).encode()).hexdigest()[:8]}"
+        logger.warning(f"Chat request missing session_id. Generated anon session: {session_id}")
+
     memory = ConversationMemory(session_id=session_id)
+    tracker = TokenTracker()
 
     client_key = key_record["key"]
     is_allowed, remaining_tokens = rate_limiter.is_allowed(client_key)
@@ -168,7 +184,7 @@ async def chat_endpoint(
     query = request.query
     start_time = time.time()
 
-    cached_response, similarity = semantic_cache.lookup(query)
+    cached_response, similarity = semantic_cache.lookup(query, session_id=session_id)
     if cached_response:
         metrics = RouteMetrics(
             query=query,
@@ -190,7 +206,7 @@ async def chat_endpoint(
             "routing_reasoning": metrics.reasoning
         }
 
-    is_unsafe, safety_reason = guardrails.check_input_injection(query)
+    is_unsafe, safety_reason = guardrails.check_input_injection(query, tracker=tracker)
     if is_unsafe:
  
         metrics = RouteMetrics(
@@ -198,10 +214,10 @@ async def chat_endpoint(
             classified_complexity="simple",
             chosen_model="guardrails",
             reasoning=f"Blocked by input security guardrail: {safety_reason}",
-            prompt_tokens=0,
-            completion_tokens=0,
+            prompt_tokens=tracker.prompt_tokens,
+            completion_tokens=tracker.completion_tokens,
             latency_sec=time.time() - start_time,
-            cost_usd=0.0,
+            cost_usd=tracker.cost_usd,
             timestamp=time.time()
         )
         observability_registry.log_transaction(metrics)
@@ -213,9 +229,10 @@ async def chat_endpoint(
             "routing_reasoning": safety_reason
         }
 
-    has_tree = page_retriever.tree is not None
+    tree = page_retriever.get_tree(session_id)
+    has_tree = tree is not None
     try:
-        strategy, routing_reason = retrieval_router.route(query, has_tree=has_tree)
+        strategy, routing_reason = retrieval_router.route(query, has_tree=has_tree, tracker=tracker)
     except Exception:
         strategy, routing_reason = "vector", "Failed to run router. Falling back to vector search."
 
@@ -224,20 +241,20 @@ async def chat_endpoint(
         retrieved_docs = []
         if strategy in ["vector", "both"]:
             try:
-                vector_docs = vector_retriever.query(query, n_results=4)
+                vector_docs = vector_retriever.query(query, n_results=4, filters={"session_id": session_id})
                 retrieved_docs.extend(vector_docs)
             except Exception as e:
                 logger.error(f"Vector retriever query failed: {e}")
         if strategy in ["page_index", "both"] and has_tree:
             try:
-                traverse_res = page_retriever.traverse(page_retriever.tree, query, max_depth=4)
+                traverse_res = page_retriever.traverse(tree, query, max_depth=4, tracker=tracker)
                 page_docs = page_retriever.get_sections_as_documents(traverse_res)
                 retrieved_docs.extend(page_docs)
             except Exception as e:
                 logger.error(f"PageIndex retrieval failed: {e}")
         if retrieved_docs:
             try:
-                reranked_docs = reranker.rerank(query, retrieved_docs, top_n=3)
+                reranked_docs = reranker.rerank(query, retrieved_docs, top_n=3, tracker=tracker)
             except Exception:
                 reranked_docs = retrieved_docs[:3]
         else:
@@ -249,7 +266,8 @@ async def chat_endpoint(
         response_text, metrics, tool_calls = agent_engine.run_agent_loop(
             query=query,
             context=context_block,
-            memory=memory
+            memory=memory,
+            tracker=tracker
         )
     except Exception as e:
         response_text = f"An API inference error occurred: {e}."
@@ -267,7 +285,7 @@ async def chat_endpoint(
         tool_calls = None
         observability_registry.log_transaction(metrics)
     if response_text and "inference error" not in response_text.lower():
-        semantic_cache.update(query, response_text)
+        semantic_cache.update(query, response_text, session_id=session_id)
         memory.add_message("user", query)
         memory.add_message("model", response_text)
 

@@ -137,78 +137,78 @@ def parse_markdown(file_path: str) -> List[Document]:
     )]
 
 
-def parse_yaml(file_path: str) -> List[Document]:
-    """Parses a YAML file, structuring the content into a readable string."""
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"YAML file not found at {file_path}")
-
-    filename = os.path.basename(file_path)
-    with open(file_path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-
-    # Format YAML data as key-value string blocks
-    text_content = yaml.dump(data, default_flow_style=False)
-    
-    return [Document(
-        text=text_content,
-        metadata={
-            "source": filename,
-            "file_path": file_path,
-            "file_type": "yaml",
-            "parsed_data": data
-        }
-    )]
-
-
-def build_pdf_structural_tree(file_path: str) -> TreeNode:
-    """Builds a structural tree for a PDF document page-by-page.
-    
-    If the document has bookmarks, we can use them. Otherwise, we group pages
-    into higher-level nodes or treat pages as sections. For a general PDF, 
-    we treat pages as leaf nodes under a root document.
-    """
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"PDF file not found at {file_path}")
-
-    filename = os.path.basename(file_path)
-    root = TreeNode(
-        id=f"root_{filename}",
-        title=filename,
-        type="document",
-        summary=f"Full PDF document structure for {filename}."
-    )
-    
-    with open(file_path, "rb") as f:
-        reader = pypdf.PdfReader(f)
-        total_pages = len(reader.pages)
-        
-        # Let's extract first 200 characters from each page as an index-level preview/summary
-        for page_num in range(total_pages):
-            page = reader.pages[page_num]
-            text = page.extract_text() or ""
-            
-            # Simple heuristic for title: first non-empty line of the page
-            lines = [l.strip() for l in text.split("\n") if l.strip()]
-            page_title = lines[0] if lines else f"Page {page_num + 1}"
-            if len(page_title) > 60:
-                page_title = page_title[:57] + "..."
-            
-            summary_snippet = text[:250].replace("\n", " ").strip() + "..."
-            
-            page_node = TreeNode(
-                id=f"page_{page_num + 1}",
-                title=f"Page {page_num + 1}: {page_title}",
-                type="page",
-                summary=summary_snippet,
-                content=text,
-                metadata={
-                    "page_number": page_num + 1,
-                    "source": filename
-                }
-            )
-            root.children.append(page_node)
-            
-    return root
+# def parse_yaml(file_path: str) -> List[Document]:
+#     """Parses a YAML file, structuring the content into a readable string."""
+#     if not os.path.exists(file_path):
+#         raise FileNotFoundError(f"YAML file not found at {file_path}")
+# 
+#     filename = os.path.basename(file_path)
+#     with open(file_path, "r", encoding="utf-8") as f:
+#         data = yaml.safe_load(f)
+# 
+#     # Format YAML data as key-value string blocks
+#     text_content = yaml.dump(data, default_flow_style=False)
+#     
+#     return [Document(
+#         text=text_content,
+#         metadata={
+#             "source": filename,
+#             "file_path": file_path,
+#             "file_type": "yaml",
+#             "parsed_data": data
+#         }
+#     )]
+# 
+# 
+# def build_pdf_structural_tree(file_path: str) -> TreeNode:
+#     """Builds a structural tree for a PDF document page-by-page.
+#     
+#     If the document has bookmarks, we can use them. Otherwise, we group pages
+#     into higher-level nodes or treat pages as sections. For a general PDF, 
+#     we treat pages as leaf nodes under a root document.
+#     """
+#     if not os.path.exists(file_path):
+#         raise FileNotFoundError(f"PDF file not found at {file_path}")
+# 
+#     filename = os.path.basename(file_path)
+#     root = TreeNode(
+#         id=f"root_{filename}",
+#         title=filename,
+#         type="document",
+#         summary=f"Full PDF document structure for {filename}."
+#     )
+#     
+#     with open(file_path, "rb") as f:
+#         reader = pypdf.PdfReader(f)
+#         total_pages = len(reader.pages)
+#         
+#         # Let's extract first 200 characters from each page as an index-level preview/summary
+#         for page_num in range(total_pages):
+#             page = reader.pages[page_num]
+#             text = page.extract_text() or ""
+#             
+#             # Simple heuristic for title: first non-empty line of the page
+#             lines = [l.strip() for l in text.split("\n") if l.strip()]
+#             page_title = lines[0] if lines else f"Page {page_num + 1}"
+#             if len(page_title) > 60:
+#                 page_title = page_title[:57] + "..."
+#             
+#             summary_snippet = text[:250].replace("\n", " ").strip() + "..."
+#             
+#             page_node = TreeNode(
+#                 id=f"page_{page_num + 1}",
+#                 title=f"Page {page_num + 1}: {page_title}",
+#                 type="page",
+#                 summary=summary_snippet,
+#                 content=text,
+#                 metadata={
+#                     "page_number": page_num + 1,
+#                     "source": filename
+#                 }
+#             )
+#             root.children.append(page_node)
+#             
+#     return root
 
 
 def build_markdown_structural_tree(file_path: str) -> TreeNode:

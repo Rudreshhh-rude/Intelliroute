@@ -33,7 +33,10 @@ EVAL_QUERIES = [
 
     # Tool Trigger Queries
     {"query": "Please create a high priority support ticket because the semantic cache similarity threshold is failing under load.", "type": "tool_calling"},
-    {"query": "Export a structured summary JSON file outlining Chapter 3 performance tuning.", "type": "tool_calling"}
+    {"query": "Export a structured summary JSON file outlining Chapter 3 performance tuning.", "type": "tool_calling"},
+
+    # Anonymous Session Fallback Test
+    {"query": "Test query with no session ID to verify anonymous fallback.", "type": "anon_session", "omit_session_id": True}
 ]
 
 
@@ -118,33 +121,59 @@ def run_benchmark():
         time.sleep(5)
         
         start_time = time.time()
+        payload = {"query": query}
+        if not item.get("omit_session_id"):
+            payload["session_id"] = "eval_session"
+
         try:
             resp = requests.post(
                 "http://localhost:8000/api/chat",
                 headers={"Content-Type": "application/json", "X-API-Key": settings.gemini_api_key},
-                json={"query": query, "session_id": "eval_session"}
+                json=payload
             )
             duration = time.time() - start_time
             
             if resp.status_code == 200:
                 data = resp.json()
+                answer = data.get("answer", "")
                 metrics = data.get("metrics", {})
                 
+                if not isinstance(answer, str) or "inference error occurred" in str(answer).lower():
+                    results.append({
+                        "query": query,
+                        "type": q_type,
+                        "status": "failed (inference error)",
+                        "latency": duration,
+                        "cost": 0.0,
+                        "tokens": 0
+                    })
+                    print(f"  Request failed: Inference Error - {answer}")
+                else:
+                    results.append({
+                        "query": query,
+                        "type": q_type,
+                        "status": "success",
+                        "strategy": data.get("strategy"),
+                        "cache_hit": data.get("cache_hit"),
+                        "model": metrics.get("chosen_model"),
+                        "complexity": metrics.get("classified_complexity"),
+                        "latency": metrics.get("latency_sec", duration),
+                        "cost": metrics.get("cost_usd", 0.0),
+                        "tokens": metrics.get("prompt_tokens", 0) + metrics.get("completion_tokens", 0),
+                        "reasoning": data.get("routing_reasoning")
+                    })
+                    print(f"  Routed Strategy: {data.get('strategy')}, Model: {metrics.get('chosen_model')}")
+                    print(f"  Latency: {metrics.get('latency_sec', duration):.2f}s, Cost: ${metrics.get('cost_usd', 0.0):.6f}")
+            elif resp.status_code == 429:
                 results.append({
                     "query": query,
                     "type": q_type,
-                    "status": "success",
-                    "strategy": data.get("strategy"),
-                    "cache_hit": data.get("cache_hit"),
-                    "model": metrics.get("chosen_model"),
-                    "complexity": metrics.get("classified_complexity"),
-                    "latency": metrics.get("latency_sec", duration),
-                    "cost": metrics.get("cost_usd", 0.0),
-                    "tokens": metrics.get("prompt_tokens", 0) + metrics.get("completion_tokens", 0),
-                    "reasoning": data.get("routing_reasoning")
+                    "status": "failed (HTTP 429 Rate Limit)",
+                    "latency": duration,
+                    "cost": 0.0,
+                    "tokens": 0
                 })
-                print(f"  Routed Strategy: {data.get('strategy')}, Model: {metrics.get('chosen_model')}")
-                print(f"  Latency: {metrics.get('latency_sec', duration):.2f}s, Cost: ${metrics.get('cost_usd', 0.0):.6f}")
+                print(f"  Request failed: Rate Limited")
             else:
                 results.append({
                     "query": query,
@@ -234,8 +263,8 @@ This report summarizes the benchmark run for **15 evaluation queries** encompass
 3. **Adaptive Complexity Routing**: Dual model selection (Flash vs Pro) correctly mapped simple questions to fast, cost-effective models while routing synthesis and code generation tasks to Pro.
 """
 
-    artifact_dir = "C:/Users/rbelk/.gemini/antigravity-ide/brain/434fc5d0-de8a-4141-8783-5fbe3b65d1f0"
-    report_path = os.path.join(artifact_dir, "evaluation_report.md")
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+    report_path = os.path.join(project_root, "evaluation_report.md")
     
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(report)

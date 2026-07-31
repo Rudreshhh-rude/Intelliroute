@@ -17,7 +17,7 @@ Unlike standard RAG apps that just query a vector database and pass the results 
 Here is a breakdown of what I built under the hood and why:
 
 ### 1. Ingestion Pipeline
-*   **Multi-Source Extractor**: Handles unstructured PDFs page-by-page (using `pypdf`) and processes structured Markdown/YAML outline configurations.
+*   **Multi-Source Extractor**: Handles unstructured PDFs page-by-page (using `pypdf`) and processes structured Markdown outline configurations.
 *   **Hierarchical Parser**: Parses headers recursively using a stack-based heading parser to construct hierarchical `TreeNode` outline index structures.
 
 ### 2. Hybrid Retrieval Engine

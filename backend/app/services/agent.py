@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from google import genai
 from google.genai import types
 from backend.app.core.config import settings
-from backend.app.services.routing import ModelRouter, RouteMetrics
+from backend.app.services.routing import ModelRouter, RouteMetrics, TokenTracker
 from backend.app.services.retrieval import get_genai_client, _call_gemini_with_retry
 from backend.app.services import database
 
@@ -193,15 +193,17 @@ class AgentEngine:
         self,
         query: str,
         context: str,
-        memory: ConversationMemory
+        memory: ConversationMemory,
+        tracker: Optional[TokenTracker] = None
     ) -> Tuple[str, RouteMetrics, Optional[Dict[str, Any]]]:
         """Runs the agent loop. 
         
         Classifies complexity, chooses zero-shot or CoT prompts,
         handles tool definitions, and returns the response and execution metrics.
         """
+        local_tracker = tracker if tracker is not None else TokenTracker()
         # 1. Query Router determines complexity first
-        complexity, reasoning = self.router.classify_query(query)
+        complexity, reasoning = self.router.classify_query(query, tracker=local_tracker)
         chosen_model = self.router.model_pro if complexity == "complex" else self.router.model_flash
         
         # 2. Select dynamic prompt system instruction
@@ -247,7 +249,8 @@ class AgentEngine:
                 client=self.client,
                 model=chosen_model,
                 contents=history_contents,
-                config=config
+                config=config,
+                tracker=local_tracker
             )
             
             # Check if Gemini requested a function call
@@ -286,7 +289,8 @@ class AgentEngine:
                         client=self.client,
                         model=chosen_model,
                         contents=history_contents,
-                        config=config
+                        config=config,
+                        tracker=local_tracker
                     )
                 else:
                     response_text = f"Error: Tool '{tool_name}' not found."
@@ -299,33 +303,15 @@ class AgentEngine:
             raise e
 
         # 7. Collect usage and cost metrics
-        prompt_tokens = 0
-        completion_tokens = 0
-        if response.usage_metadata:
-            prompt_tokens = response.usage_metadata.prompt_token_count or 0
-            completion_tokens = response.usage_metadata.candidates_token_count or 0
-            
-        if prompt_tokens == 0:
-            prompt_tokens = len(str(query) + str(context)) // 4
-        if completion_tokens == 0:
-            completion_tokens = len(response_text) // 4
-            
-        from backend.app.services.routing import MODEL_PRICING, DEFAULT_PRICING_FLASH, DEFAULT_PRICING_PRO
-        pricing = MODEL_PRICING.get(chosen_model)
-        if not pricing:
-            pricing = DEFAULT_PRICING_PRO if "pro" in chosen_model else DEFAULT_PRICING_FLASH
-            
-        cost_usd = (prompt_tokens * pricing["input"]) + (completion_tokens * pricing["output"])
-        
         metrics = RouteMetrics(
             query=query,
             classified_complexity=complexity,
             chosen_model=chosen_model,
             reasoning=reasoning,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
+            prompt_tokens=local_tracker.prompt_tokens,
+            completion_tokens=local_tracker.completion_tokens,
             latency_sec=latency_sec,
-            cost_usd=cost_usd,
+            cost_usd=local_tracker.cost_usd,
             timestamp=time.time()
         )
         

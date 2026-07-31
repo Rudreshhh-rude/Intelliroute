@@ -22,8 +22,6 @@ class TokenBucket:
             now = time.time()
             elapsed = now - self.last_updated
             self.last_updated = now
-            
-            # Refill tokens based on elapsed time
             self.tokens = min(self.capacity, self.tokens + (elapsed * self.refill_rate))
             
             if self.tokens >= 1.0:

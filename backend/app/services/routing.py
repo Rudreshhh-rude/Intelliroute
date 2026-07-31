@@ -33,6 +33,20 @@ MODEL_PRICING = {
 DEFAULT_PRICING_FLASH = {"input": 0.075 / 1_000_000, "output": 0.30 / 1_000_000}
 DEFAULT_PRICING_PRO = {"input": 1.25 / 1_000_000, "output": 5.00 / 1_000_000}
 
+class TokenTracker:
+    def __init__(self):
+        self.prompt_tokens = 0
+        self.completion_tokens = 0
+        self.cost_usd = 0.0
+
+    def add_usage(self, model: str, pt: int, ct: int):
+        self.prompt_tokens += pt
+        self.completion_tokens += ct
+        pricing = MODEL_PRICING.get(model)
+        if not pricing:
+            pricing = DEFAULT_PRICING_PRO if "pro" in model else DEFAULT_PRICING_FLASH
+        self.cost_usd += (pt * pricing["input"]) + (ct * pricing["output"])
+
 class RouteMetrics(BaseModel):
     query: str
     classified_complexity: str 
@@ -78,7 +92,7 @@ class ModelRouter:
         self.model_flash = settings.model_name_flash
         self.model_pro = settings.model_name_pro or "gemini-2.5-pro"
 
-    def classify_query(self, query: str) -> Tuple[str, str]:
+    def classify_query(self, query: str, tracker: Optional[TokenTracker] = None) -> Tuple[str, str]:
         """Classifies incoming query as 'simple' or 'complex' using the fast Flash model."""
         prompt = f"""You are an advanced query complexity classifier for an enterprise router.
 Analyze the user's query and classify it as either "simple" or "complex".
@@ -99,7 +113,8 @@ Format output as raw JSON only.
             response = _call_gemini_with_retry(
                 client=self.client,
                 model=self.model_flash,
-                contents=prompt
+                contents=prompt,
+                tracker=tracker
             )
             data = _parse_json_response(response.text)
             complexity = data.get("complexity", "simple").lower()
@@ -116,11 +131,14 @@ Format output as raw JSON only.
         query: str,
         system_instruction: Optional[str] = None,
         contents: Any = None,
-        config: Optional[Dict[str, Any]] = None
+        config: Optional[Dict[str, Any]] = None,
+        tracker: Optional[TokenTracker] = None
     ) -> Tuple[str, RouteMetrics]:
         """Classifies query, routes to appropriate model, runs inference, and logs performance metrics."""
+        local_tracker = tracker if tracker is not None else TokenTracker()
+        
         # 1. Classify complexity
-        complexity, reasoning = self.classify_query(query)
+        complexity, reasoning = self.classify_query(query, tracker=local_tracker)
         
         # 2. Select model
         chosen_model = self.model_flash if complexity == "simple" else self.model_pro
@@ -141,38 +159,24 @@ Format output as raw JSON only.
                 client=self.client,
                 model=chosen_model,
                 contents=inputs,
-                config=config
+                config=config,
+                tracker=local_tracker
             )
             latency_sec = time.time() - start_time
         except Exception as e:
             logger.error(f"Execution failed on model {chosen_model}: {e}")
             raise e
 
-        # 5. Extract token counts and calculate cost
-        prompt_tokens = 0
-        completion_tokens = 0
-        if response.usage_metadata:
-            prompt_tokens = response.usage_metadata.prompt_token_count or 0
-            completion_tokens = response.usage_metadata.candidates_token_count or 0
-        if prompt_tokens == 0:
-            prompt_tokens = len(str(inputs)) // 4
-        if completion_tokens == 0:
-            completion_tokens = len(response.text or "") // 4
-            
-        pricing = MODEL_PRICING.get(chosen_model)
-        if not pricing:
-            pricing = DEFAULT_PRICING_PRO if "pro" in chosen_model else DEFAULT_PRICING_FLASH
-            
-        cost_usd = (prompt_tokens * pricing["input"]) + (completion_tokens * pricing["output"])
+        # 5. Extract token counts and calculate cost from tracker
         metrics = RouteMetrics(
             query=query,
             classified_complexity=complexity,
             chosen_model=chosen_model,
             reasoning=reasoning,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
+            prompt_tokens=local_tracker.prompt_tokens,
+            completion_tokens=local_tracker.completion_tokens,
             latency_sec=latency_sec,
-            cost_usd=cost_usd,
+            cost_usd=local_tracker.cost_usd,
             timestamp=time.time()
         )
         observability_registry.log_transaction(metrics)
