@@ -3,6 +3,8 @@ from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger("intelliroute.database")
 DB_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../database.db"))
+if os.getenv("APP_ENV") == "test":
+    DB_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../test_database.db"))
 
 def get_db_connection() -> sqlite3.Connection:
     """Returns a connection to the SQLite database file."""
@@ -12,6 +14,7 @@ def get_db_connection() -> sqlite3.Connection:
 
 def init_db(default_admin_key: str):
     """Initializes database tables and seeds a default Admin API key if empty."""
+    print(f"DEBUG: init_db called with DB_FILE = {DB_FILE}", flush=True)
     logger.info(f"Initializing SQLite database at: {DB_FILE}")
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -25,6 +28,7 @@ def init_db(default_admin_key: str):
         created_at REAL NOT NULL
     )
     """)
+    print("DEBUG: api_keys table created (or exists)", flush=True)
     
     # 2. Observability Metrics Table
     cursor.execute("""

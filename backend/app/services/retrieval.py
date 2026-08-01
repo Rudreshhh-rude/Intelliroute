@@ -17,12 +17,65 @@ class MockGenAIModels:
 
     def generate_content(self, model, contents, config=None):
         content_str = str(contents)
-        if "Review the system architecture section on page 12 of the technical handbook" in content_str:
+        # Relevance Reranker Mock
+        if "You are evaluating search results relevance" in content_str:
             class MockResponse:
-                text = '{"strategy": "both", "reasoning": "The query requires locating a specific structural section (\'page 12 of the technical handbook\') as well as aggregating broad factual data (\'global benchmarking data found throughout the rest of the documentation\')."}'
-                usage_metadata = type("Usage", (), {"prompt_token_count": 10, "candidates_token_count": 10})()
-                function_calls = None
-            return MockResponse()
+                def __init__(self, text):
+                    self.text = text
+                    self.usage_metadata = type("Usage", (), {"prompt_token_count": 5, "candidates_token_count": 5})()
+                    self.function_calls = None
+            if "ZERO_RELEVANCE" in content_str:
+                return MockResponse('[{"index": 0, "score": 0}, {"index": 1, "score": 0}, {"index": 2, "score": 0}, {"index": 3, "score": 0}]')
+            elif "TIE_RELEVANCE" in content_str:
+                return MockResponse('[{"index": 0, "score": 8}, {"index": 1, "score": 8}, {"index": 2, "score": 8}, {"index": 3, "score": 8}]')
+            else:
+                return MockResponse('[{"index": 0, "score": 10}, {"index": 1, "score": 8}, {"index": 2, "score": 5}, {"index": 3, "score": 0}]')
+                
+        # PageIndex Traversal Mock
+        if "You are an advanced document navigation agent" in content_str:
+            class MockResponse:
+                def __init__(self, text):
+                    self.text = text
+                    self.usage_metadata = type("Usage", (), {"prompt_token_count": 5, "candidates_token_count": 1})()
+                    self.function_calls = None
+            if "(ID: mock_sec_1)" in content_str:
+                return MockResponse("1")
+            else:
+                return MockResponse("NONE")
+                
+        # Retrieval Router Mock
+        if "Analyze the user's query and decide which retrieval strategy is best" in content_str:
+            if "TEST_STRUCTURAL" in content_str:
+                class MockResponse:
+                    text = '{"strategy": "page_index", "reasoning": "Routing to page index due to TEST_STRUCTURAL"}'
+                    usage_metadata = type("Usage", (), {"prompt_token_count": 10, "candidates_token_count": 10})()
+                    function_calls = None
+                return MockResponse()
+            if "Review the system architecture section on page 12 of the technical handbook" in content_str:
+                class MockResponse:
+                    text = '{"strategy": "both", "reasoning": "The query requires locating a specific structural section (\'page 12 of the technical handbook\') as well as aggregating broad factual data (\'global benchmarking data found throughout the rest of the documentation\')."}'
+                    usage_metadata = type("Usage", (), {"prompt_token_count": 10, "candidates_token_count": 10})()
+                    function_calls = None
+                return MockResponse()
+                
+        # Model Router Mock
+        if 'classify it as either "simple" or "complex"' in content_str:
+            if "TEST_STRUCTURAL" in content_str or "TIE_RELEVANCE" in content_str or "ZERO_RELEVANCE" in content_str or "Review the system architecture section on page 12 of the technical handbook" in content_str:
+                class MockResponse:
+                    text = '{"complexity": "complex", "reasoning": "Needs routing"}'
+                    usage_metadata = type("Usage", (), {"prompt_token_count": 10, "candidates_token_count": 10})()
+                    function_calls = None
+                return MockResponse()
+                
+        # Agent Echo Mock (to return the context order)
+        sys_inst = str(config.system_instruction) if config and hasattr(config, 'system_instruction') else ""
+        if "Enterprise Knowledge Assistant" in sys_inst:
+            if "TIE_RELEVANCE" in content_str or "ZERO_RELEVANCE" in content_str or "TEST_STRUCTURAL" in content_str:
+                class MockResponse:
+                    text = f"ECHO_CONTEXT: {sys_inst}\n{content_str}"
+                    usage_metadata = type("Usage", (), {"prompt_token_count": 10, "candidates_token_count": 10})()
+                    function_calls = None
+                return MockResponse()
         if "TRIGGER_503" in content_str:
             raise Exception("503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}")
         if "TRIGGER_429" in content_str:
@@ -180,6 +233,15 @@ class PageIndexRetriever:
         self.client = create_client(api_key=api_key)
         self.model_name = model_name
         self.trees: Dict[str, TreeNode] = {}
+        
+        if os.getenv("APP_ENV") == "test":
+            mock_leaf = TreeNode(id="mock_leaf_1", title="Mock Leaf 1", type="leaf", content="Mock traversal content containing session ID tenant_structural", metadata={})
+            mock_sec = TreeNode(id="mock_sec_1", title="Mock Sec 1", type="section", summary="Mock Structural Header", children=[mock_leaf], metadata={})
+            mock_root = TreeNode(id="mock_root", title="Mock Root Document", type="document", children=[mock_sec], metadata={})
+            self.trees = {
+                "tenant_structural": mock_root,
+                "tenant_1": mock_root
+            }
 
     def load_tree_index(self, path: str, session_id: str = "default"):
         """Loads a TreeNode tree outline from a saved JSON file path."""
@@ -343,7 +405,7 @@ class RetrievalRouter:
         self.model_name = model_name
 
     def route(self, query: str, has_tree: bool, tracker: Any = None) -> Tuple[str, str]:
-        if not has_tree and os.getenv("APP_ENV") != "test":
+        if not has_tree:
             return "vector", "No structural tree index is available for PageIndex retrieval; falling back to vector search."
 
         prompt = f"""Analyze the user's query and decide which retrieval strategy is best.
