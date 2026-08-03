@@ -150,6 +150,7 @@ class GeminiEmbeddingFunction(EmbeddingFunction):
     def __init__(self, api_key: str, model_name: str = "gemini-embedding-2"):
         self.client = create_client(api_key=api_key)
         self.model_name = model_name
+        self.current_tracker = None
 
     def __call__(self, input: Documents) -> Embeddings:
         try:
@@ -157,6 +158,15 @@ class GeminiEmbeddingFunction(EmbeddingFunction):
                 model=self.model_name,
                 contents=input
             )
+            if hasattr(self, "current_tracker") and self.current_tracker:
+                prompt_tokens = 0
+                if hasattr(response, "usage_metadata") and response.usage_metadata:
+                    prompt_tokens = response.usage_metadata.prompt_token_count or 0
+                else:
+                    total_chars = sum(len(text) for text in input)
+                    prompt_tokens = total_chars // 4
+                self.current_tracker.add_usage(self.model_name, prompt_tokens, 0)
+                
             return [e.values for e in response.embeddings]
         except Exception as e:
             raise RuntimeError(f"Error calling Gemini Embedding API: {e}")
@@ -205,7 +215,7 @@ class VectorRetriever:
                 metadatas=metadatas[i:i+batch_size]
             )
 
-    def query(self, query_text: str, n_results: int = 5, filters: Optional[Dict[str, Any]] = None) -> List[Document]:
+    def query(self, query_text: str, n_results: int = 5, filters: Optional[Dict[str, Any]] = None, tracker: Any = None) -> List[Document]:
         """Queries the vector database for similar chunks."""
         chroma_filter = {}
         if filters:
@@ -215,11 +225,15 @@ class VectorRetriever:
             elif len(filters) > 1:
                 chroma_filter = {"$and": [{k: v} for k, v in filters.items()]}
         
+        if hasattr(self.embedding_function, "current_tracker"):
+            self.embedding_function.current_tracker = tracker
         results = self.collection.query(
             query_texts=[query_text],
             n_results=n_results,
             where=chroma_filter if chroma_filter else None
         )
+        if hasattr(self.embedding_function, "current_tracker"):
+            self.embedding_function.current_tracker = None
         
         docs = []
         if results and results["documents"] and results["documents"][0]:
@@ -384,8 +398,17 @@ Return raw JSON only.
                 tracker=tracker
             )
             scores_data = _parse_json_response(response.text)
+            
+            if isinstance(scores_data, dict):
+                for v in scores_data.values():
+                    if isinstance(v, list):
+                        scores_data = v
+                        break
+            if not isinstance(scores_data, list):
+                scores_data = []
+                
             scored_docs = []
-            score_map = {item["index"]: item["score"] for item in scores_data if "index" in item and "score" in item}
+            score_map = {item["index"]: item["score"] for item in scores_data if isinstance(item, dict) and "index" in item and "score" in item}
             
             for idx, doc in enumerate(documents):
                 score = score_map.get(idx, 0)

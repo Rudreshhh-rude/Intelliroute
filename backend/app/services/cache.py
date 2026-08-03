@@ -1,7 +1,7 @@
 import time
 import uuid
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Any
 import chromadb
 from chromadb.api.types import QueryResult
 from backend.app.core.config import settings
@@ -24,18 +24,22 @@ class SemanticCache:
             metadata={"hnsw:space": "cosine"}
         )
 
-    def lookup(self, query: str, session_id: str = "default") -> Tuple[Optional[str], Optional[float]]:
+    def lookup(self, query: str, session_id: str = "default", tracker: Any = None) -> Tuple[Optional[str], Optional[float]]:
         """Looks up a query in the cache.
         
         Returns (cached_response, similarity_score) if hit, else (None, None).
         """
         try:
             # Query the collection for 1 match
+            if hasattr(self.embedding_function, "current_tracker"):
+                self.embedding_function.current_tracker = tracker
             results: QueryResult = self.collection.query(
                 query_texts=[query],
                 n_results=1,
                 where={"session_id": session_id}
             )
+            if hasattr(self.embedding_function, "current_tracker"):
+                self.embedding_function.current_tracker = None
             if not results or not results["documents"] or len(results["documents"][0]) == 0:
                 return None, None
             distance = results["distances"][0][0]
@@ -44,7 +48,11 @@ class SemanticCache:
             logger.info(f"Cache lookup similarity: {similarity:.4f} (distance: {distance:.4f}) for query '{query[:30]}...'")
             
             if similarity >= self.threshold:
-                cached_response = results["documents"][0][0]
+                # Retrieve the stored response from the metadata
+                cached_response = results["metadatas"][0][0].get("response")
+                # Fallback if somehow it was old schema where response was document:
+                if not cached_response:
+                    cached_response = results["documents"][0][0]
                 logger.info(f"Cache HIT for query '{query[:30]}...' (Score: {similarity:.4f})")
                 return cached_response, similarity
                 
@@ -54,15 +62,19 @@ class SemanticCache:
             logger.error(f"Error looking up query in semantic cache: {e}")
             return None, None
 
-    def update(self, query: str, response: str, session_id: str = "default"):
+    def update(self, query: str, response: str, session_id: str = "default", tracker: Any = None):
         """Adds a query and its completed response to the cache."""
         try:
             doc_id = str(uuid.uuid4())
+            if hasattr(self.embedding_function, "current_tracker"):
+                self.embedding_function.current_tracker = tracker
             self.collection.add(
-                documents=[response],
-                metadatas=[{"original_query": query, "timestamp": time.time(), "session_id": session_id}],
+                documents=[query],
+                metadatas=[{"response": response, "original_query": query, "timestamp": time.time(), "session_id": session_id}],
                 ids=[doc_id]
             )
+            if hasattr(self.embedding_function, "current_tracker"):
+                self.embedding_function.current_tracker = None
             logger.info(f"Cache updated with new entry for query '{query[:30]}...'")
         except Exception as e:
             logger.error(f"Failed to update semantic cache: {e}")

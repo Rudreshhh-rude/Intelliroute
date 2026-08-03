@@ -184,7 +184,7 @@ async def chat_endpoint(
     query = request.query
     start_time = time.time()
 
-    cached_response, similarity = semantic_cache.lookup(query, session_id=session_id)
+    cached_response, similarity = semantic_cache.lookup(query, session_id=session_id, tracker=tracker)
     if cached_response:
         metrics = RouteMetrics(
             query=query,
@@ -241,7 +241,7 @@ async def chat_endpoint(
         retrieved_docs = []
         if strategy in ["vector", "both"]:
             try:
-                vector_docs = vector_retriever.query(query, n_results=4, filters={"session_id": session_id})
+                vector_docs = vector_retriever.query(query, n_results=4, filters={"session_id": session_id}, tracker=tracker)
                 retrieved_docs.extend(vector_docs)
             except Exception as e:
                 logger.error(f"Vector retriever query failed: {e}")
@@ -285,7 +285,7 @@ async def chat_endpoint(
         tool_calls = None
         observability_registry.log_transaction(metrics)
     if response_text and "inference error" not in response_text.lower():
-        semantic_cache.update(query, response_text, session_id=session_id)
+        semantic_cache.update(query, response_text, session_id=session_id, tracker=tracker)
         memory.add_message("user", query)
         memory.add_message("model", response_text)
 
