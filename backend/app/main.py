@@ -83,7 +83,7 @@ def verify_api_key(required_roles: List[str]):
         return key_record
     return dependency
 @app.post("/api/ingest")
-async def ingest_document(
+def ingest_document(
     file: UploadFile = File(...),
     session_id: str = "default",
     key_record: dict = Depends(verify_api_key(["Writer", "Admin"]))
@@ -159,7 +159,7 @@ async def ingest_document(
             os.remove(temp_path)
 
 @app.post("/api/chat")
-async def chat_endpoint(
+def chat_endpoint(
     request: ChatRequest,
     key_record: dict = Depends(verify_api_key(["Reader", "Writer", "Admin"]))
 ):

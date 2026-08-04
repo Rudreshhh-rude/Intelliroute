@@ -10,8 +10,9 @@ from backend.app.services.retrieval import GeminiEmbeddingFunction
 logger = logging.getLogger("intelliroute.cache")
 
 class SemanticCache:
-    def __init__(self, api_key: str, threshold: float = 0.85):
+    def __init__(self, api_key: str, threshold: float = 0.85, max_size: int = 1000):
         self.threshold = threshold
+        self.max_size = max_size
         # chroma client
         self.chroma_client = chromadb.PersistentClient(path=settings.chroma_db_path)
         self.embedding_function = GeminiEmbeddingFunction(
@@ -76,5 +77,18 @@ class SemanticCache:
             if hasattr(self.embedding_function, "current_tracker"):
                 self.embedding_function.current_tracker = None
             logger.info(f"Cache updated with new entry for query '{query[:30]}...'")
+            
+            # Eviction Policy: Enforce max_size
+            if self.collection.count() > self.max_size:
+                all_items = self.collection.get(include=["metadatas"])
+                if all_items and all_items["ids"]:
+                    items = list(zip(all_items["ids"], all_items["metadatas"]))
+                    # Sort by timestamp ascending (oldest first)
+                    items.sort(key=lambda x: x[1].get("timestamp", 0) if x[1] else 0)
+                    to_delete_count = len(items) - self.max_size
+                    if to_delete_count > 0:
+                        ids_to_delete = [item[0] for item in items[:to_delete_count]]
+                        self.collection.delete(ids=ids_to_delete)
+                        logger.info(f"Evicted {to_delete_count} old cache entries.")
         except Exception as e:
             logger.error(f"Failed to update semantic cache: {e}")

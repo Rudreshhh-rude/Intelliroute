@@ -95,35 +95,37 @@ def create_client(api_key: str) -> Any:
         return MockGenAIClient(api_key=api_key)
     return genai.Client(api_key=api_key)
 
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
+
+def _should_retry_gemini(e: Exception) -> bool:
+    err_msg = str(e).lower()
+    if "requestsperday" in err_msg.replace("_", "").replace("-", "") or "requests per day" in err_msg:
+        print("Daily request limit exceeded. Skipping retries.")
+        return False
+    if "429" in err_msg or "resource_exhausted" in err_msg or "503" in err_msg or "unavailable" in err_msg:
+        return True
+    return False
+
+@retry(
+    stop=stop_after_attempt(6),
+    wait=wait_exponential(multiplier=1.5, min=4, max=60),
+    retry=retry_if_exception(_should_retry_gemini),
+    reraise=True
+)
 def _call_gemini_with_retry(client, model, contents, config=None, max_retries=3, initial_delay=5, tracker=None):
-    delay = initial_delay
-    for attempt in range(max_retries + 1):
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents=contents,
-                config=config
-            )
-            if tracker and response.usage_metadata:
-                tracker.add_usage(
-                    model,
-                    response.usage_metadata.prompt_token_count or 0,
-                    response.usage_metadata.candidates_token_count or 0
-                )
-            return response
-        except Exception as e:
-            err_msg = str(e)
-            if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-                # Immediately raise if it's a daily limit that can't be resolved with short sleeps
-                if "requestsperday" in err_msg.lower().replace("_", "").replace("-", "") or "requests per day" in err_msg.lower():
-                    print("Daily request limit exceeded. Skipping retries.")
-                    raise e
-                if attempt < max_retries:
-                    print(f"Rate limited (429/ResourceExhausted). Retrying in {delay} seconds...")
-                    time.sleep(delay)
-                    delay *= 2
-                    continue
-            raise e
+    # max_retries and initial_delay are ignored as we use tenacity now.
+    response = client.models.generate_content(
+        model=model,
+        contents=contents,
+        config=config
+    )
+    if tracker and response.usage_metadata:
+        tracker.add_usage(
+            model,
+            response.usage_metadata.prompt_token_count or 0,
+            response.usage_metadata.candidates_token_count or 0
+        )
+    return response
 
 _genai_client = None
 
@@ -391,10 +393,12 @@ Return a JSON array of objects representing the scores. Each object must have:
 Return raw JSON only.
 """
         try:
+            from google.genai import types
             response = _call_gemini_with_retry(
                 client=self.client,
                 model=self.model_name,
                 contents=prompt,
+                config=types.GenerationConfig(response_mime_type="application/json"),
                 tracker=tracker
             )
             scores_data = _parse_json_response(response.text)
